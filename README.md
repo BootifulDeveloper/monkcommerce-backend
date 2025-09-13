@@ -1,71 +1,121 @@
-# Monk Commerce Coupons Management API
-## Purpose
+# MonkCommerce Coupon Module 
+## 1. Overview
+This module handles creation, management, and application of coupons in MonkCommerce.
+Supports multiple coupon types: **cart-wise**, **product-wise**, and **BXGY**.
+Uses **Strategy Pattern** to flexibly apply coupons.
 
-Monk Commerce Coupons Management API is a robust backend solution designed to efficiently handle the creation, management, and application of **discount coupons** in e-commerce platforms. The goal is to enable dynamic promotional strategies—such as cart-wise, product-wise, and Buy-X-Get-Y (BxGy) deals—while maintaining **scalability, extensibility, and correctness**. This backend empowers marketing teams and delights customers by ensuring discounts are reliably calculated and easily managed.
+---
 
-***
-## Key Features
-- **Flexible Coupon Types**
-  - **Cart-wise Coupons:** Percentage-based discount if the cart total exceeds a set threshold.
-  - **Product-wise Coupons:** Discounts targeted to specific products in the cart.
-  - **Buy-X-Get-Y (BxGy):** Advanced deal logic supporting repetition limits and multiple products in “buy” and “get” groups.
+## 2. Architecture Diagram
 
-- **Extensible Architecture**
-  - Easily add new coupon subtypes in the future without changing existing APIs or database schema.
+```
+      +----------------+
+      |  CouponController  |
+      +---------+------+
+                |
+                v
+      +----------------+
+      |  CouponService  |
+      +---------+------+
+        |        |
+        |        +-------------------+
+        |                            |
+        v                            v
++----------------+           +------------------+
+| CouponRepository |         |  CouponStrategy  |
++----------------+           +------------------+
+                                 |   ^    ^
+                    +------------+   |    +------------+
+                    |                |                 |
+         +----------------+   +----------------+   +----------------+
+         | CartWiseStrategy|   | ProductWiseStrategy| | BXGYStrategy  |
+         +----------------+   +----------------+   +----------------+
+```
 
-- **RESTful API Endpoints**
-  - Complete support for CRUD operations (`POST`, `GET`, `PUT`, `DELETE`).
-  - Dedicated endpoints to fetch applicable coupons for a given cart and apply selected coupons, updating cart prices and discounts.
+**Legend:**
 
-- **Strong Error Handling**
-  - Centralized, descriptive error responses for invalid requests, business rule violations, and data issues (e.g., expired or inapplicable coupons).
+* Controller → Service → Repository (standard flow)
+* Service uses **Strategy pattern** to apply coupon logic
+* Strategies are pluggable, new types can be added easily
 
-- **Performance & Maintainability**
-  - Optimized coupon calculation routines and modular, layered architecture for ease of testing and future enhancement.
-***
+---
 
-## Business Value
+## 3. Entities Diagram (ERD)
 
-- **Increase Cart Value:** Strategic discounts boost average order size and customer engagement.
-- **Marketing Flexibility:** Easily launch and manage complex campaigns with minimal developer intervention.
-- **E-commerce Reliability:** Accurate, edge-case-aware coupon logic prevents losses and builds customer trust.
-***
+```
++-----------+          +-----------+          +---------+
+|   Coupon  |1        *|   Cart    |1        *| CartItem|
++-----------+          +-----------+          +---------+
+| id        |          | items     |<>--------| productId|
+| type      |          | totalPrice|          | quantity |
+| details   |          | totalDiscount|       | price    |
+| isActive  |          | finalPrice |        | totalDiscount |
+| expirationDate|                              
++-----------+ 
+```
 
-## Suitable Use Cases
-- General-purpose e-commerce platforms
-- Online retail shops
-- Businesses seeking to automate and scale promotional discount logic
-***
+**Notes:**
 
-## Example
+* A **Cart** has multiple **CartItems**
+* Coupon is applied to a Cart via Strategy
 
-### Cart-wise Coupon
-> 10% off on carts over Rs. 100  
-> Applied if the cart total exceeds Rs. 100.
+---
 
-### Product-wise Coupon
-> 20% off on Product A  
-> Applied if Product A is in the cart.
+## 4. Coupon Strategy Flow
 
-### BxGy Coupon
-> Buy 3 from [X, Y, Z], get 1 free from [A, B, C], limit 2 repetitions  
-> Applied according to complex groupings and cart content.
-***
+```
+Client CartDto ---> CouponService ---> Strategy Selector
+                                         |
+      +-------------------------+--------+---------+
+      |                         |                  |
+CartWiseStrategy         ProductWiseStrategy      BXGYStrategy
+      |                         |                  |
+      v                         v                  v
+CalculateDiscount          CalculateDiscount   CalculateDiscount
+ApplyDiscount              ApplyDiscount     ApplyDiscount
+      |                         |                  |
+      +-----------+-------------+------------------+
+                  v
+            Updated Cart with Discounts
+```
 
-## Why Choose This API?
-- Designed for production-readiness and rapid extension
-- Documented assumptions, edge cases, limitations, and possible improvements
-- Test-backed architecture supporting fast validation and safe deployments
-- Modern code structure, industry-standard best practices, and maintainable source[2][1]
-***
+---
 
-## Documentation and Developer Guide
-- Full API endpoint list and payloads included
-- Detailed description of implemented and unimplemented scenarios
-- List of system assumptions and architectural limitations
-- Suggestions for further improvement and integration
-***
+## 5. API Request/Response Flow
 
-[2](https://www.codingshuttle.com/blog/best-practices-for-writing-spring-boot-api)
-[3](https://www.geeksforgeeks.org/system-design/design-coupon-and-voucher-management-system/)
-[4](https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/attachments/82562609/0f4e38ef-16f7-4f55-a6e8-a09db44f4730/Software-Developer-Backend-Task-Monk-Commerce-2025.pdf)
+```
+Client
+  |
+  | POST /api/v1/coupons
+  v
+CouponController
+  |
+  | calls createCoupon(CreateCouponDto)
+  v
+CouponServiceImpl
+  |
+  | validates & persists
+  v
+CouponRepository
+  |
+  v
+DB (coupons table)
+```
+
+**Example:** Applying a coupon
+```
+Client sends CartDto ---> /api/v1/applicable-coupons ---> Controller ---> Service
+Service selects applicable coupons using strategies ---> returns List<ApplicableCouponDto>
+Client selects coupon ---> /api/v1/apply-coupon/{id} ---> Service applies discount ---> returns updated Cart
+```
+
+## 6. Key Takeaways
+
+* **Flexible Design:** Strategy pattern allows new coupon types without modifying service layer
+* **Performance Optimized:** Indexed columns and stream-based calculations
+* **Validation:** Both DTO-level (Jakarta Validation) and service-level (active, expiration, applicability)
+* **Extensible:** Adding new coupon type = implement `CouponStrategy` and register
+
+---
+
+
