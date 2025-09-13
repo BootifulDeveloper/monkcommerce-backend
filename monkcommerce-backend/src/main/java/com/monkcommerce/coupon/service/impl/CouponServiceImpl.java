@@ -1,9 +1,9 @@
 package com.monkcommerce.coupon.service.impl;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
@@ -24,145 +24,148 @@ import com.monkcommerce.coupon.service.strategy.CouponStrategy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * Implementation of {@link CouponService} that manages coupon creation,
+ * retrieval, update, deletion, and application.
+ * <p>
+ * Business logic for applying coupons is delegated to different
+ * {@link CouponStrategy} implementations based on {@link CouponType}.
+ * </p>
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 @Transactional
 public class CouponServiceImpl implements CouponService {
 
-	private final CouponRepository couponRepository;
-	private final Map<CouponType, CouponStrategy> couponStrategies;
+    private final CouponRepository couponRepository;
+    private final Map<CouponType, CouponStrategy> couponStrategies;
 
-	@Override
-	public Coupon createCoupon(CreateCouponDto createCouponDto) {
-		log.info("Creating coupon of type: {}", createCouponDto.getType());
+    @Override
+    public Coupon createCoupon(CreateCouponDto createCouponDto) {
+        log.info("Creating coupon of type: {}", createCouponDto.getType());
+        Coupon coupon = new Coupon();
+        coupon.setType(CouponType.fromString(createCouponDto.getType()));
+        coupon.setDetails(convertDetailsToStringMap(createCouponDto.getDetails()));
+        coupon.setExpirationDate(createCouponDto.getExpirationDate());
+        coupon.setIsActive(true);
+        coupon.setCreatedAt(LocalDateTime.now());
+        coupon.setUpdatedAt(LocalDateTime.now());
 
-		Coupon coupon = new Coupon();
-		coupon.setType(CouponType.fromString(createCouponDto.getType()));
-		coupon.setDetails(convertDetailsToStringMap(createCouponDto.getDetails()));
-		coupon.setExpirationDate(createCouponDto.getExpirationDate());
-		coupon.setIsActive(true);
-		coupon.setCreatedAt(LocalDateTime.now());
-		coupon.setUpdatedAt(LocalDateTime.now());
+        return couponRepository.save(coupon);
+    }
 
-		return couponRepository.save(coupon);
-	}
+    @Override
+    @Transactional(readOnly = true)
+    public List<Coupon> getAllCoupons() {
+        log.info("Fetching all coupons");
+        return couponRepository.findAll();
+    }
 
-	@Override
-	@Transactional(readOnly = true)
-	public List<Coupon> getAllCoupons() {
-		log.info("Fetching all coupons");
-		return couponRepository.findAll();
-	}
+    @Override
+    @Transactional(readOnly = true)
+    public Coupon getCouponById(Long id) {
+        log.info("Fetching coupon by id: {}", id);
+        return couponRepository.findById(id)
+                .orElseThrow(() -> new CouponNotFoundException("Coupon not found with id: " + id));
+    }
 
-	@Override
-	@Transactional(readOnly = true)
-	public Coupon getCouponById(Long id) {
-		log.info("Fetching coupon by id: {}", id);
-		return couponRepository.findById(id)
-				.orElseThrow(() -> new CouponNotFoundException("Coupon not found with id: " + id));
-	}
+    @Override
+    public Coupon updateCoupon(Long id, UpdateCouponDto updateCouponDto) {
+        log.info("Updating coupon with id: {}", id);
 
-	@Override
-	public Coupon updateCoupon(Long id, UpdateCouponDto updateCouponDto) {
-		log.info("Updating coupon with id: {}", id);
+        Coupon existingCoupon = getCouponById(id);
 
-		Coupon existingCoupon = getCouponById(id);
+        Optional.ofNullable(updateCouponDto.getType())
+                .ifPresent(type -> existingCoupon.setType(CouponType.fromString(type)));
 
-		if (updateCouponDto.getType() != null) {
-			existingCoupon.setType(CouponType.fromString(updateCouponDto.getType()));
-		}
-		if (updateCouponDto.getDetails() != null) {
-			existingCoupon.setDetails(convertDetailsToStringMap(updateCouponDto.getDetails()));
-		}
-		if (updateCouponDto.getExpirationDate() != null) {
-			existingCoupon.setExpirationDate(updateCouponDto.getExpirationDate());
-		}
-		if (updateCouponDto.getIsActive() != null) {
-			existingCoupon.setIsActive(updateCouponDto.getIsActive());
-		}
+        Optional.ofNullable(updateCouponDto.getDetails())
+                .ifPresent(details -> existingCoupon.setDetails(convertDetailsToStringMap(details)));
 
-		existingCoupon.setUpdatedAt(LocalDateTime.now());
+        Optional.ofNullable(updateCouponDto.getExpirationDate())
+                .ifPresent(existingCoupon::setExpirationDate);
 
-		return couponRepository.save(existingCoupon);
-	}
+        Optional.ofNullable(updateCouponDto.getIsActive())
+                .ifPresent(existingCoupon::setIsActive);
 
-	@Override
-	public void deleteCoupon(Long id) {
-		log.info("Deleting coupon with id: {}", id);
+        existingCoupon.setUpdatedAt(LocalDateTime.now());
 
-		if (!couponRepository.existsById(id)) {
-			throw new CouponNotFoundException("Coupon not found with id: " + id);
-		}
+        return couponRepository.save(existingCoupon);
+    }
 
-		couponRepository.deleteById(id);
-	}
+    @Override
+    public void deleteCoupon(Long id) {
+        log.info("Deleting coupon with id: {}", id);
 
-	@Override
-	@Transactional(readOnly = true)
-	public List<ApplicableCouponDto> getApplicableCoupons(Cart cart) {
-		log.info("Finding applicable coupons for cart with {} items", cart.getItems().size());
+        couponRepository.findById(id)
+                .ifPresentOrElse(
+                        couponRepository::delete,
+                        () -> { throw new CouponNotFoundException("Coupon not found with id: " + id); }
+                );
+    }
 
-		List<Coupon> activeCoupons = couponRepository.findActiveAndNotExpired(LocalDateTime.now());
+    @Override
+    @Transactional(readOnly = true)
+    public List<ApplicableCouponDto> getApplicableCoupons(Cart cart) {
+        log.info("Finding applicable coupons for cart with {} items", cart.getItems().size());
 
-		return activeCoupons.stream().filter(coupon -> {
-			CouponStrategy strategy = couponStrategies.get(coupon.getType());
-			return strategy != null && strategy.isApplicable(cart, coupon);
-		}).map(coupon -> {
-			CouponStrategy strategy = couponStrategies.get(coupon.getType());
-			double discount = strategy.calculateDiscount(cart, coupon);
-			return new ApplicableCouponDto(coupon.getId(), coupon.getType().getValue(), discount);
-		}).collect(Collectors.toList());
-	}
+        return couponRepository.findActiveAndNotExpired(LocalDateTime.now())
+                .stream()
+                .map(coupon -> {
+                    CouponStrategy strategy = couponStrategies.get(coupon.getType());
+                    if (strategy != null && strategy.isApplicable(cart, coupon)) {
+                        double discount = strategy.calculateDiscount(cart, coupon);
+                        return new ApplicableCouponDto(coupon.getId(), coupon.getType().getValue(), discount);
+                    }
+                    return null;
+                })
+                .filter(c -> c != null)
+                .collect(Collectors.toList());
+    }
 
-	@Override
-	public Cart applyCoupon(Long couponId, Cart cart) {
-		log.info("Applying coupon {} to cart", couponId);
+    @Override
+    public Cart applyCoupon(Long couponId, Cart cart) {
+        log.info("Applying coupon {} to cart", couponId);
 
-		Coupon coupon = couponRepository.findByIdAndIsActiveTrue(couponId)
-				.orElseThrow(() -> new CouponNotFoundException("Active coupon not found with id: " + couponId));
+        Coupon coupon = couponRepository.findByIdAndIsActiveTrue(couponId)
+                .orElseThrow(() -> new CouponNotFoundException("Active coupon not found with id: " + couponId));
 
-		// Check if coupon is expired
-		if (coupon.getExpirationDate() != null && coupon.getExpirationDate().isBefore(LocalDateTime.now())) {
-			throw new InvalidCouponException("Coupon has expired");
-		}
+        if (coupon.getExpirationDate() != null && coupon.getExpirationDate().isBefore(LocalDateTime.now())) {
+            throw new InvalidCouponException("Coupon has expired");
+        }
 
-		CouponStrategy strategy = couponStrategies.get(coupon.getType());
-		if (strategy == null) {
-			throw new InvalidCouponException("Unsupported coupon type: " + coupon.getType());
-		}
+        CouponStrategy strategy = couponStrategies.get(coupon.getType());
+        if (strategy == null) {
+            throw new InvalidCouponException("Unsupported coupon type: " + coupon.getType());
+        }
 
-		if (!strategy.isApplicable(cart, coupon)) {
-			throw new InvalidCouponException("Coupon is not applicable to this cart");
-		}
+        if (!strategy.isApplicable(cart, coupon)) {
+            throw new InvalidCouponException("Coupon is not applicable to this cart");
+        }
 
-		return strategy.applyCoupon(cart, coupon);
-	}
+        return strategy.applyCoupon(cart, coupon);
+    }
 
-	/**
-	 * Helper method to convert Object values to String for database storage
-	 */
-	private Map<String, String> convertDetailsToStringMap(Map<String, Object> details) {
-		Map<String, String> stringDetails = new HashMap<>();
-		details.forEach((key, value) -> stringDetails.put(key, value.toString()));
-		return stringDetails;
-	}
+    /**
+     * Converts coupon details to a string-based map for persistence.
+     */
+    private Map<String, String> convertDetailsToStringMap(Map<String, Object> details) {
+        return details.entrySet()
+                .stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().toString()));
+    }
 
-	/**
-	 * Get active coupons by type - utility method
-	 */
-	@Transactional(readOnly = true)
-	public List<Coupon> getActiveCouponsByType(CouponType type) {
-		return couponRepository.findByTypeAndActiveAndNotExpired(type, LocalDateTime.now());
-	}
+    @Override
+    @Transactional(readOnly = true)
+    public List<Coupon> getActiveCouponsByType(CouponType type) {
+        return couponRepository.findByTypeAndActiveAndNotExpired(type, LocalDateTime.now());
+    }
 
-	/**
-	 * Get coupons expiring within specified days
-	 */
-	@Transactional(readOnly = true)
-	public List<Coupon> getCouponsExpiringWithin(int days) {
-		LocalDateTime now = LocalDateTime.now();
-		LocalDateTime futureDate = now.plusDays(days);
-		return couponRepository.findCouponsExpiringWithin(now, futureDate);
-	}
+    @Override
+    @Transactional(readOnly = true)
+    public List<Coupon> getCouponsExpiringWithin(int days) {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime futureDate = now.plusDays(days);
+        return couponRepository.findCouponsExpiringWithin(now, futureDate);
+    }
 }

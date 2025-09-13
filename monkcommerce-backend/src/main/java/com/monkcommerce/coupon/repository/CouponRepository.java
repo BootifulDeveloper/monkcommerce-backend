@@ -12,76 +12,130 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Repository interface for managing {@link Coupon} entities.
+ * <p>
+ * Extends:
+ * <ul>
+ * <li>{@link JpaRepository} - Provides CRUD operations and pagination.</li>
+ * <li>{@link JpaSpecificationExecutor} - Enables dynamic query support using
+ * Specifications.</li>
+ * </ul>
+ * </p>
+ */
 @Repository
 public interface CouponRepository extends JpaRepository<Coupon, Long>, JpaSpecificationExecutor<Coupon> {
 
 	/**
-	 * Find all active coupons
+	 * Retrieves all coupons that are currently active.
+	 *
+	 * @return list of active {@link Coupon} entities
 	 */
 	List<Coupon> findByIsActiveTrue();
 
 	/**
-	 * Find all active coupons that haven't expired
+	 * Retrieves all active coupons that have not expired.
+	 * <p>
+	 * A coupon is considered valid if:
+	 * <ul>
+	 * <li>It has no expiration date, or</li>
+	 * <li>Its expiration date is greater than the current time.</li>
+	 * </ul>
+	 * </p>
+	 *
+	 * @param currentTime current timestamp for filtering
+	 * @return list of valid active coupons
 	 */
 	@Query("SELECT c FROM Coupon c WHERE c.isActive = true AND (c.expirationDate IS NULL OR c.expirationDate > :currentTime)")
 	List<Coupon> findActiveAndNotExpired(@Param("currentTime") LocalDateTime currentTime);
 
 	/**
-	 * Find coupons by type
+	 * Retrieves all coupons of a given type.
+	 *
+	 * @param type the {@link CouponType} to filter by
+	 * @return list of coupons of the specified type
 	 */
 	List<Coupon> findByType(CouponType type);
 
 	/**
-	 * Find active coupons by type
+	 * Retrieves all active coupons of a given type.
+	 *
+	 * @param type the {@link CouponType} to filter by
+	 * @return list of active coupons of the given type
 	 */
 	List<Coupon> findByTypeAndIsActiveTrue(CouponType type);
 
 	/**
-	 * Find active and not expired coupons by type
+	 * Retrieves all active and non-expired coupons of a given type.
+	 *
+	 * @param type        the {@link CouponType} to filter by
+	 * @param currentTime current timestamp for expiration check
+	 * @return list of valid active coupons of the given type
 	 */
 	@Query("SELECT c FROM Coupon c WHERE c.type = :type AND c.isActive = true AND (c.expirationDate IS NULL OR c.expirationDate > :currentTime)")
 	List<Coupon> findByTypeAndActiveAndNotExpired(@Param("type") CouponType type,
 			@Param("currentTime") LocalDateTime currentTime);
 
 	/**
-	 * Find coupons that are about to expire (within specified days)
+	 * Retrieves active coupons that are about to expire within the given time
+	 * window.
+	 *
+	 * @param now        the current timestamp
+	 * @param futureDate the future timestamp up to which expiration is considered
+	 * @return list of coupons expiring within the specified period
 	 */
 	@Query("SELECT c FROM Coupon c WHERE c.isActive = true AND c.expirationDate IS NOT NULL AND c.expirationDate BETWEEN :now AND :futureDate")
 	List<Coupon> findCouponsExpiringWithin(@Param("now") LocalDateTime now,
 			@Param("futureDate") LocalDateTime futureDate);
 
 	/**
-	 * Find expired coupons
+	 * Retrieves all coupons that are expired (past their expiration date).
+	 *
+	 * @param currentTime current timestamp for filtering
+	 * @return list of expired coupons
 	 */
 	@Query("SELECT c FROM Coupon c WHERE c.expirationDate IS NOT NULL AND c.expirationDate < :currentTime")
 	List<Coupon> findExpiredCoupons(@Param("currentTime") LocalDateTime currentTime);
 
 	/**
-	 * Count active coupons
+	 * Counts the number of active coupons.
+	 *
+	 * @return the total count of active coupons
 	 */
 	long countByIsActiveTrue();
 
 	/**
-	 * Count coupons by type
+	 * Counts the number of coupons by type.
+	 *
+	 * @param type the {@link CouponType} to filter by
+	 * @return the number of coupons of the given type
 	 */
 	long countByType(CouponType type);
 
 	/**
-	 * Find coupon by ID only if active
+	 * Retrieves a coupon by ID only if it is active.
+	 *
+	 * @param id the ID of the coupon
+	 * @return an {@link Optional} containing the active coupon, if found
 	 */
 	Optional<Coupon> findByIdAndIsActiveTrue(Long id);
 
 	/**
-	 * Check if coupon exists and is active
+	 * Checks whether a coupon exists with the given ID and is active.
+	 *
+	 * @param id the coupon ID
+	 * @return {@code true} if the coupon exists and is active, {@code false}
+	 *         otherwise
 	 */
 	boolean existsByIdAndIsActiveTrue(Long id);
 
 	/**
-	 * Soft delete - mark coupon as inactive
+	 * Performs a soft delete by marking a coupon as inactive and updating its
+	 * {@code updatedAt} timestamp.
+	 *
+	 * @param id          the coupon ID to deactivate
+	 * @param currentTime the timestamp to set as {@code updatedAt}
 	 */
 	@Query("UPDATE Coupon c SET c.isActive = false, c.updatedAt = :currentTime WHERE c.id = :id")
 	void softDeleteById(@Param("id") Long id, @Param("currentTime") LocalDateTime currentTime);
-
-
-
 }

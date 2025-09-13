@@ -26,7 +26,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * 
  * For more details, refer to the README documentation in the project root.
  * 
- * @author Monk Commerce Team
+ * @author rahul.chauhan
  * @since 2025
  */
 @SpringBootApplication
